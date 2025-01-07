@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "publisher": "seuUsuario",
   "engines": {
-    "vscode": "^1.80.0" 
+    "vscode": "^1.80.0"
   },
   "categories": [
     "Other",
@@ -42,6 +42,14 @@
           "name": "Prompt Master"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "vscode-prompt-master.openPromptPanel",
+        "key": "alt+2",
+        "mac": "alt+2",
+        "when": "editorTextFocus"
+      }
+    ]
   }
 }

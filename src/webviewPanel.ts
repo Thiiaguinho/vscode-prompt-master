@@ -5,6 +5,7 @@ import * as fs from "fs"
 import * as path from "path"
 import { PromptMasterTreeProvider } from "./treeViewProvider"
 import { getHtmlForWebview } from "./webviewHtml"
+import { loadCustomPrompts, saveCustomPrompt, deleteCustomPrompt } from "./prompts"
 
 let panel: vscode.WebviewPanel | undefined = undefined
 
@@ -30,20 +31,78 @@ export function openPromptPanel(
     panel.webview.onDidReceiveMessage(async (message) => {
       switch (message.command) {
         case "generateAndCopy":
-          const selectedPaths = treeDataProvider.getSelectedFiles()
-          const combined = await concatFilesContent(selectedPaths, message.promptText)
-          await vscode.env.clipboard.writeText(combined)
+          {
+            const selectedPaths = treeDataProvider.getSelectedFiles()
+            const combined = await concatFilesContent(
+              selectedPaths,
+              message.selectedPrompts,
+              message.promptText
+            )
+            await vscode.env.clipboard.writeText(combined)
 
-          // Exibe a notificação no VSCode
-          vscode.window.showInformationMessage(
-            "Conteúdo gerado e copiado para a área de transferência!"
-          )
+            vscode.window.showInformationMessage(
+              "Conteúdo gerado e copiado para a área de transferência!"
+            )
 
-          // Opcional: enviar uma confirmação para o WebView, se desejar manter
-          panel?.webview.postMessage({
-            command: "generatedContent",
-            text: combined,
-          })
+            panel?.webview.postMessage({
+              command: "generatedContent",
+              text: combined,
+            })
+          }
+          break
+
+        case "getCustomPrompts":
+          {
+            const prompts = await loadCustomPrompts()
+            panel?.webview.postMessage({
+              command: "listCustomPrompts",
+              prompts,
+            })
+          }
+          break
+
+        case "loadMultiplePrompts":
+          {
+            const prompts = await loadCustomPrompts()
+            const selectedNames: string[] = message.names
+            let combinedContent = ""
+            selectedNames.forEach((name) => {
+              const found = prompts.find((p) => p.name === name)
+              if (found) {
+                // Concatenamos o conteúdo desses prompts
+                combinedContent += `\n=== [${found.name}] ===\n${found.content}\n`
+              }
+            })
+            panel?.webview.postMessage({
+              command: "loadedMultiplePrompts",
+              combinedName: selectedNames.join("+"),
+              combinedContent: combinedContent.trim(),
+            })
+          }
+          break
+
+        case "saveCustomPrompt":
+          {
+            await saveCustomPrompt(message.name, message.content)
+            vscode.window.showInformationMessage(`Prompt "${message.name}" salvo com sucesso!`)
+            const prompts = await loadCustomPrompts()
+            panel?.webview.postMessage({
+              command: "listCustomPrompts",
+              prompts,
+            })
+          }
+          break
+
+        case "deleteCustomPrompt":
+          {
+            await deleteCustomPrompt(message.name)
+            vscode.window.showInformationMessage(`Prompt "${message.name}" excluído com sucesso!`)
+            const prompts = await loadCustomPrompts()
+            panel?.webview.postMessage({
+              command: "listCustomPrompts",
+              prompts,
+            })
+          }
           break
       }
     }, undefined)
@@ -54,12 +113,16 @@ export function openPromptPanel(
   }
 }
 
-async function concatFilesContent(paths: string[], userPrompt: string): Promise<string> {
+async function concatFilesContent(
+  paths: string[],
+  selectedPrompts: string[],
+  userPrompt: string
+): Promise<string> {
   let finalText = ""
 
+  // Conteúdo dos arquivos selecionados
   for (const filePath of paths) {
     try {
-      // Se for pasta ou imagem, ignorar
       const stat = fs.lstatSync(filePath)
       if (stat.isDirectory()) {
         continue
@@ -71,13 +134,24 @@ async function concatFilesContent(paths: string[], userPrompt: string): Promise<
         continue
       }
 
+      const relativePath = vscode.workspace.asRelativePath(filePath)
       const doc = await vscode.workspace.openTextDocument(filePath)
-      finalText += `---\nPath: ${filePath}\nConteúdo:\n${doc.getText()}\n---\n\n`
+      finalText += `---\nPath: ${relativePath}\nConteúdo:\n${doc.getText()}\n---\n\n`
     } catch {
       // Se não conseguir ler, ignore
     }
   }
 
-  finalText += `\nPROMPT:\n${userPrompt}\n`
+  // Conteúdo dos prompts selecionados
+  const allPrompts = await loadCustomPrompts()
+  for (const name of selectedPrompts) {
+    const found = allPrompts.find((p) => p.name === name)
+    if (found) {
+      finalText += `---\nPrompt Personalizado: ${found.name}\nConteúdo:\n${found.content}\n---\n\n`
+    }
+  }
+
+  // Prompt manual final
+  finalText += `PROMPT:\n${userPrompt}\n`
   return finalText
 }

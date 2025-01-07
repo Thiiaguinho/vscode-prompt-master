@@ -46,3 +46,20 @@ export async function saveCustomPrompt(name: string, content: string): Promise<v
   const filePath = path.join(promptDir, `${name}.md`)
   await fs.promises.writeFile(filePath, content, "utf-8")
 }
+
+/**
+ * Exclui um prompt personalizado em .vscode/prompt-master/[nome].md
+ */
+export async function deleteCustomPrompt(name: string): Promise<void> {
+  if (!vscode.workspace.workspaceFolders) {
+    return
+  }
+  const root = vscode.workspace.workspaceFolders[0].uri.fsPath
+  const promptDir = path.join(root, ".vscode", "prompt-master")
+  const filePath = path.join(promptDir, `${name}.md`)
+  try {
+    await fs.promises.unlink(filePath)
+  } catch (error) {
+    // Se o arquivo não existir, apenas ignore
+  }
+}
