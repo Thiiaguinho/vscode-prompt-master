@@ -1,3 +1,5 @@
+// src/webviewHtml.ts
+
 import * as vscode from "vscode"
 
 export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.Uri): string {
@@ -25,6 +27,11 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
         #status {
           color: green;
           margin-top: 0.5rem;
+          opacity: 0;
+          transition: opacity 0.5s ease-in-out;
+        }
+        #status.visible {
+          opacity: 1;
         }
       </style>
     </head>
@@ -51,7 +58,14 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
 
         window.addEventListener("message", (event) => {
           if (event.data?.command === "generatedContent") {
-            document.getElementById("status").textContent = "Conteúdo gerado e copiado!";
+            const status = document.getElementById("status");
+            status.textContent = "Conteúdo gerado e copiado!";
+            status.classList.add("visible");
+
+            // Ocultar a mensagem após 3 segundos
+            setTimeout(() => {
+              status.classList.remove("visible");
+            }, 3000);
           }
         });
       </script>

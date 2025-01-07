@@ -1,3 +1,5 @@
+// src/webviewPanel.ts
+
 import * as vscode from "vscode"
 import * as fs from "fs"
 import * as path from "path"
@@ -31,6 +33,13 @@ export function openPromptPanel(
           const selectedPaths = treeDataProvider.getSelectedFiles()
           const combined = await concatFilesContent(selectedPaths, message.promptText)
           await vscode.env.clipboard.writeText(combined)
+
+          // Exibe a notificação no VSCode
+          vscode.window.showInformationMessage(
+            "Conteúdo gerado e copiado para a área de transferência!"
+          )
+
+          // Opcional: enviar uma confirmação para o WebView, se desejar manter
           panel?.webview.postMessage({
             command: "generatedContent",
             text: combined,
