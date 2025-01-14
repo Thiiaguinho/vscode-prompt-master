@@ -48,7 +48,6 @@ export class PromptMasterTreeProvider implements vscode.TreeDataProvider<FileIte
   }
 
   getTreeItem(element: FileItem): vscode.TreeItem {
-    // Não abrir/collapse ao clicar no label: vamos remover a ação padrão e usar outro "trick" abaixo
     const checkboxSymbol = this.isSelected(element.fullPath) ? "[x]" : "[ ]"
     const displayName = `${checkboxSymbol} ${element.label}`
 
@@ -59,17 +58,13 @@ export class PromptMasterTreeProvider implements vscode.TreeDataProvider<FileIte
         : vscode.TreeItemCollapsibleState.None
     )
 
-    // O comando abaixo serve apenas para togglar seleção.
-    // Isso previne que o VSCode abra/feche a pasta ao clicar no label (ficando só na setinha).
     treeItem.command = {
       command: "vscode-prompt-master.toggleSelection",
       title: "",
       arguments: [element],
     }
 
-    // Recurso: o tooltip do item (opcional)
     treeItem.tooltip = element.fullPath
-
     treeItem.contextValue = element.isDirectory ? "folder" : "file"
     treeItem.resourceUri = vscode.Uri.file(element.fullPath)
 
@@ -86,7 +81,7 @@ export class PromptMasterTreeProvider implements vscode.TreeDataProvider<FileIte
     try {
       const dirents = await fs.promises.readdir(currentPath, { withFileTypes: true })
       const children = dirents
-        // Ignora ocultos
+        // Ignora arquivos/pastas que começam com "."
         .filter((dirent) => !dirent.name.startsWith("."))
         .map((dirent) => {
           const fullPath = path.join(currentPath, dirent.name)
@@ -126,6 +121,52 @@ export class PromptMasterTreeProvider implements vscode.TreeDataProvider<FileIte
 
     return result
   }
+
+  // === INÍCIO DAS NOVAS FUNÇÕES PARA ATUALIZAÇÃO AUTOMÁTICA DA VIEW ===
+
+  /**
+   * Chamado quando um arquivo ou pasta é criado.
+   * Se a pasta pai estiver selecionada, este novo path também passa a ser selecionado.
+   */
+  public handleFileCreated(filePath: string) {
+    // Se algum ancestral estiver selecionado, marcamos o novo path também
+    if (this.hasAnySelectedParent(filePath)) {
+      this.selectedPaths.add(filePath)
+    }
+    this.refresh()
+  }
+
+  /**
+   * Chamado quando um arquivo ou pasta é excluído.
+   * Se o path estiver selecionado, removemos da seleção.
+   */
+  public handleFileDeleted(filePath: string) {
+    if (this.selectedPaths.has(filePath)) {
+      this.selectedPaths.delete(filePath)
+    }
+    this.refresh()
+  }
+
+  /**
+   * Verifica se algum diretório pai (ancestral) está selecionado.
+   * Se sim, então novos arquivos criados nesse diretório também devem ser selecionados.
+   */
+  private hasAnySelectedParent(filePath: string): boolean {
+    let current = path.dirname(filePath)
+    while (true) {
+      if (this.selectedPaths.has(current)) {
+        return true
+      }
+      const parent = path.dirname(current)
+      if (parent === current) {
+        break
+      }
+      current = parent
+    }
+    return false
+  }
+
+  // === FIM DAS NOVAS FUNÇÕES PARA ATUALIZAÇÃO AUTOMÁTICA DA VIEW ===
 }
 
 export class FileItem {

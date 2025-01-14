@@ -1,16 +1,15 @@
-// src/webviewPanel.ts
-
 import * as vscode from "vscode"
 import * as fs from "fs"
 import * as path from "path"
 import { PromptMasterTreeProvider } from "./treeViewProvider"
 import { getHtmlForWebview } from "./webviewHtml"
 import { loadCustomPrompts, saveCustomPrompt, deleteCustomPrompt } from "./prompts"
+import { getTotalTokens } from "./tokenCounter"
 
 let panel: vscode.WebviewPanel | undefined = undefined
 
 export function openPromptPanel(
-  extensionUri: vscode.Uri,
+  context: vscode.ExtensionContext,
   treeDataProvider: PromptMasterTreeProvider
 ) {
   if (panel) {
@@ -26,19 +25,29 @@ export function openPromptPanel(
       }
     )
 
-    panel.webview.html = getHtmlForWebview(panel.webview, extensionUri)
+    panel.webview.html = getHtmlForWebview(panel.webview, context.extensionUri)
 
     panel.webview.onDidReceiveMessage(async (message) => {
       switch (message.command) {
         case "generateAndCopy":
           {
             const selectedPaths = treeDataProvider.getSelectedFiles()
+            // Faz a concatenação de conteúdo normalmente
             const combined = await concatFilesContent(
+              context,
               selectedPaths,
               message.selectedPrompts,
               message.promptText
             )
-            await vscode.env.clipboard.writeText(combined)
+
+            // Chama a função para obter o total de tokens (palavras) de forma assíncrona
+            const totalTokens = await getTotalTokens(selectedPaths)
+
+            // Adiciona a contagem de tokens ao final do texto
+            const finalTextWithTokenCount = `${combined}\nTotal de tokens: ${totalTokens}\n`
+
+            // Copia para a área de transferência
+            await vscode.env.clipboard.writeText(finalTextWithTokenCount)
 
             vscode.window.showInformationMessage(
               "Conteúdo gerado e copiado para a área de transferência!"
@@ -46,14 +55,14 @@ export function openPromptPanel(
 
             panel?.webview.postMessage({
               command: "generatedContent",
-              text: combined,
+              text: finalTextWithTokenCount,
             })
           }
           break
 
         case "getCustomPrompts":
           {
-            const prompts = await loadCustomPrompts()
+            const prompts = await loadCustomPrompts(context)
             panel?.webview.postMessage({
               command: "listCustomPrompts",
               prompts,
@@ -63,13 +72,12 @@ export function openPromptPanel(
 
         case "loadMultiplePrompts":
           {
-            const prompts = await loadCustomPrompts()
+            const prompts = await loadCustomPrompts(context)
             const selectedNames: string[] = message.names
             let combinedContent = ""
             selectedNames.forEach((name) => {
               const found = prompts.find((p) => p.name === name)
               if (found) {
-                // Concatenamos o conteúdo desses prompts
                 combinedContent += `\n=== [${found.name}] ===\n${found.content}\n`
               }
             })
@@ -83,9 +91,9 @@ export function openPromptPanel(
 
         case "saveCustomPrompt":
           {
-            await saveCustomPrompt(message.name, message.content)
+            await saveCustomPrompt(context, message.name, message.content)
             vscode.window.showInformationMessage(`Prompt "${message.name}" salvo com sucesso!`)
-            const prompts = await loadCustomPrompts()
+            const prompts = await loadCustomPrompts(context)
             panel?.webview.postMessage({
               command: "listCustomPrompts",
               prompts,
@@ -95,9 +103,9 @@ export function openPromptPanel(
 
         case "deleteCustomPrompt":
           {
-            await deleteCustomPrompt(message.name)
+            await deleteCustomPrompt(context, message.name)
             vscode.window.showInformationMessage(`Prompt "${message.name}" excluído com sucesso!`)
-            const prompts = await loadCustomPrompts()
+            const prompts = await loadCustomPrompts(context)
             panel?.webview.postMessage({
               command: "listCustomPrompts",
               prompts,
@@ -114,6 +122,7 @@ export function openPromptPanel(
 }
 
 async function concatFilesContent(
+  context: vscode.ExtensionContext,
   paths: string[],
   selectedPrompts: string[],
   userPrompt: string
@@ -143,7 +152,7 @@ async function concatFilesContent(
   }
 
   // Conteúdo dos prompts selecionados
-  const allPrompts = await loadCustomPrompts()
+  const allPrompts = await loadCustomPrompts(context)
   for (const name of selectedPrompts) {
     const found = allPrompts.find((p) => p.name === name)
     if (found) {

@@ -3,15 +3,24 @@ import * as path from "path"
 import * as fs from "fs"
 
 /**
- * Lê todos os `.md` de prompts armazenados em .vscode/prompt-master
+ * Retorna o caminho absoluto do diretório global onde os prompts serão salvos.
+ * Exemplo: <UserData>/User/globalStorage/<extension-id>/prompt-master
  */
-export async function loadCustomPrompts(): Promise<{ name: string; content: string }[]> {
-  if (!vscode.workspace.workspaceFolders) {
-    return []
+function getGlobalPromptsDir(context: vscode.ExtensionContext): string {
+  const globalDir = path.join(context.globalStorageUri.fsPath, "prompt-master")
+  if (!fs.existsSync(globalDir)) {
+    fs.mkdirSync(globalDir, { recursive: true })
   }
-  const root = vscode.workspace.workspaceFolders[0].uri.fsPath
-  const promptDir = path.join(root, ".vscode", "prompt-master")
+  return globalDir
+}
 
+/**
+ * Lê todos os `.md` de prompts armazenados globalmente
+ */
+export async function loadCustomPrompts(
+  context: vscode.ExtensionContext
+): Promise<{ name: string; content: string }[]> {
+  const promptDir = getGlobalPromptsDir(context)
   try {
     const files = await fs.promises.readdir(promptDir)
     const mdFiles = files.filter((f) => f.endsWith(".md"))
@@ -26,36 +35,32 @@ export async function loadCustomPrompts(): Promise<{ name: string; content: stri
     }
     return results
   } catch (error) {
-    // Se o diretório não existe, simplesmente retorne vazio
+    // Se o diretório ainda não existir ou outra falha, retorne vazio
     return []
   }
 }
 
 /**
- * Salva um prompt personalizado em .vscode/prompt-master/[nome].md
+ * Salva um prompt personalizado globalmente em <globalPromptsDir>/<nome>.md
  */
-export async function saveCustomPrompt(name: string, content: string): Promise<void> {
-  if (!vscode.workspace.workspaceFolders) {
-    return
-  }
-  const root = vscode.workspace.workspaceFolders[0].uri.fsPath
-  const promptDir = path.join(root, ".vscode", "prompt-master")
-  if (!fs.existsSync(promptDir)) {
-    fs.mkdirSync(promptDir, { recursive: true })
-  }
+export async function saveCustomPrompt(
+  context: vscode.ExtensionContext,
+  name: string,
+  content: string
+): Promise<void> {
+  const promptDir = getGlobalPromptsDir(context)
   const filePath = path.join(promptDir, `${name}.md`)
   await fs.promises.writeFile(filePath, content, "utf-8")
 }
 
 /**
- * Exclui um prompt personalizado em .vscode/prompt-master/[nome].md
+ * Exclui um prompt personalizado global em <globalPromptsDir>/<nome>.md
  */
-export async function deleteCustomPrompt(name: string): Promise<void> {
-  if (!vscode.workspace.workspaceFolders) {
-    return
-  }
-  const root = vscode.workspace.workspaceFolders[0].uri.fsPath
-  const promptDir = path.join(root, ".vscode", "prompt-master")
+export async function deleteCustomPrompt(
+  context: vscode.ExtensionContext,
+  name: string
+): Promise<void> {
+  const promptDir = getGlobalPromptsDir(context)
   const filePath = path.join(promptDir, `${name}.md`)
   try {
     await fs.promises.unlink(filePath)
