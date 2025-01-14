@@ -2,7 +2,7 @@
   "name": "vscode-prompt-master",
   "displayName": "VSCode Prompt Master",
   "description": "Crie e gerencie prompts com arquivos selecionados como contexto diretamente no VSCode.",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "publisher": "Thiago",
   "engines": {
     "vscode": "^1.80.0"

@@ -32,7 +32,7 @@ export function openPromptPanel(
         case "generateAndCopy":
           {
             const selectedPaths = treeDataProvider.getSelectedFiles()
-            // Faz a concatenação de conteúdo normalmente
+            // Concatena o conteúdo dos arquivos selecionados + prompts selecionados + prompt manual
             const combined = await concatFilesContent(
               context,
               selectedPaths,
@@ -40,22 +40,22 @@ export function openPromptPanel(
               message.promptText
             )
 
-            // Chama a função para obter o total de tokens (palavras) de forma assíncrona
+            // Calcula a quantidade total de tokens (palavras)
             const totalTokens = await getTotalTokens(selectedPaths)
 
-            // Adiciona a contagem de tokens ao final do texto
-            const finalTextWithTokenCount = `${combined}\nTotal de tokens: ${totalTokens}\n`
+            // Copia somente o texto combinado, sem a contagem de tokens ao final
+            await vscode.env.clipboard.writeText(combined)
 
-            // Copia para a área de transferência
-            await vscode.env.clipboard.writeText(finalTextWithTokenCount)
-
+            // Exibe mensagem no VSCode com a contagem de tokens
             vscode.window.showInformationMessage(
-              "Conteúdo gerado e copiado para a área de transferência!"
+              `Conteúdo gerado e copiado - ${totalTokens} Tokens`
             )
 
+            // Envia mensagem ao WebView incluindo a contagem de tokens
             panel?.webview.postMessage({
               command: "generatedContent",
-              text: finalTextWithTokenCount,
+              text: combined,
+              tokenCount: totalTokens,
             })
           }
           break

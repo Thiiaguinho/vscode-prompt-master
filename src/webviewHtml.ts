@@ -137,7 +137,8 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
 
           if (data?.command === "generatedContent") {
             const status = document.getElementById("status");
-            status.textContent = "Conteúdo gerado e copiado!";
+            // Exibe a mensagem incluindo a contagem de tokens
+            status.textContent = \`Conteúdo gerado e copiado! - \${data.tokenCount} Tokens\`;
             status.classList.add("visible");
             setTimeout(() => {
               status.classList.remove("visible");
