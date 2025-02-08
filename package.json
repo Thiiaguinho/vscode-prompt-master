@@ -1,15 +1,14 @@
 {
   "name": "vscode-prompt-master",
   "displayName": "VSCode Prompt Master",
-  "description": "Crie e gerencie prompts com arquivos selecionados como contexto diretamente no VSCode.",
-  "version": "1.0.3",
+  "description": "Create and manage prompts with selected files to provide context for LLM's.",
+  "version": "1.0.4",
   "publisher": "Thiago",
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
-    "Other",
-    "Productivity"
+    "Other"
   ],
   "main": "./out/extension.js",
   "scripts": {
@@ -19,8 +18,8 @@
     "install": "npm install"
   },
   "devDependencies": {
-    "@types/vscode": "^1.80.0",
     "@types/node": "18.x",
+    "@types/vscode": "^1.80.0",
     "typescript": "^5.0.0",
     "vsce": "^2.14.0"
   },
@@ -32,7 +31,7 @@
     "commands": [
       {
         "command": "vscode-prompt-master.openPromptPanel",
-        "title": "Prompt Master: Abrir painel de prompts"
+        "title": "Prompt Master: Open Prompt Panel"
       }
     ],
     "views": {
@@ -51,5 +50,8 @@
         "when": "editorTextFocus"
       }
     ]
+  },
+  "dependencies": {
+    "tiktoken": "^1.0.20"
   }
 }

@@ -4,7 +4,7 @@ import * as path from "path"
 import { PromptMasterTreeProvider } from "./treeViewProvider"
 import { getHtmlForWebview } from "./webviewHtml"
 import { loadCustomPrompts, saveCustomPrompt, deleteCustomPrompt } from "./prompts"
-import { getTotalTokens } from "./tokenCounter"
+import { get_encoding } from "tiktoken"
 
 let panel: vscode.WebviewPanel | undefined = undefined
 
@@ -40,8 +40,10 @@ export function openPromptPanel(
               message.promptText
             )
 
-            // Calcula a quantidade total de tokens (palavras)
-            const totalTokens = await getTotalTokens(selectedPaths)
+            // Calcula a quantidade total de tokens contando arquivos, prompts personalizados e prompt manual
+            const enc = get_encoding("o200k_base")
+            const totalTokens = enc.encode(combined).length
+            enc.free()
 
             // Copia somente o texto combinado, sem a contagem de tokens ao final
             await vscode.env.clipboard.writeText(combined)
@@ -128,8 +130,48 @@ async function concatFilesContent(
   userPrompt: string
 ): Promise<string> {
   let finalText = ""
-
-  // Conteúdo dos arquivos selecionados
+  const extsToIgnore = [
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".webp",
+    ".ico",
+    ".svg",
+    ".tiff",
+    ".tif",
+    ".mp4",
+    ".mov",
+    ".avi",
+    ".mkv",
+    ".wmv",
+    ".flv",
+    ".webm",
+    ".mpeg",
+    ".mpg",
+    ".exe",
+    ".dll",
+    ".bin",
+    ".iso",
+    ".dmg",
+    ".apk",
+    ".jar",
+    ".class",
+    ".pdb",
+    ".obj",
+    ".lib",
+    ".so",
+    ".a",
+    ".o",
+    ".zip",
+    ".rar",
+    ".7z",
+    ".tar",
+    ".gz",
+    ".bz2",
+    ".pdf",
+  ]
   for (const filePath of paths) {
     try {
       const stat = fs.lstatSync(filePath)
@@ -137,18 +179,13 @@ async function concatFilesContent(
         continue
       }
       const ext = path.extname(filePath).toLowerCase()
-      if (
-        [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".ico", ".svg", ".pdf"].includes(ext)
-      ) {
+      if (extsToIgnore.includes(ext)) {
         continue
       }
-
       const relativePath = vscode.workspace.asRelativePath(filePath)
       const doc = await vscode.workspace.openTextDocument(filePath)
       finalText += `---\nPath: ${relativePath}\nConteúdo:\n${doc.getText()}\n---\n\n`
-    } catch {
-      // Se não conseguir ler, ignore
-    }
+    } catch {}
   }
 
   // Conteúdo dos prompts selecionados
