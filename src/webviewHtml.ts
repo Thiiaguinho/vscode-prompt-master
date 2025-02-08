@@ -1,11 +1,9 @@
-// src/webviewHtml.ts
-
 import * as vscode from "vscode"
 
 export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   return /* html */ `
     <!DOCTYPE html>
-    <html lang="pt-BR">
+    <html lang="en">
     <head>
       <meta charset="UTF-8">
       <title>Prompt Master</title>
@@ -49,38 +47,38 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
     </head>
     <body>
       <h1>Prompt Master</h1>
-      <p>Selecione arquivos/pastas na TreeView e clique em "Gerar & Copiar".</p>
+      <p>Select files/folders from the TreeView and click "Generate & Copy".</p>
 
       <div class="section">
-        <label for="promptText"><strong>Escreva seu Prompt:</strong></label><br/>
+        <label for="promptText"><strong>Enter your prompt:</strong></label><br/>
         <textarea id="promptText"></textarea>
-        <button id="btn-generate-copy">Gerar & Copiar</button>
+        <button id="btn-generate-copy">Generate & Copy</button>
         <p id="status"></p>
       </div>
 
       <div class="section">
-        <h2>Prompts Personalizados</h2>
+        <h2>Custom Prompts</h2>
         <div>
-          <label for="promptList">Selecione um ou mais Prompts Salvos:</label>
+          <label for="promptList">Select one or more Saved Prompts:</label>
           <select id="promptList" multiple size="5"></select>
-          <button class="inline-btn" id="btn-load-multiple-prompts">Carregar no Editor</button>
-          <button class="inline-btn" id="btn-delete-prompt">Excluir Selecionado</button>
+          <button class="inline-btn" id="btn-load-multiple-prompts">Load into Editor</button>
+          <button class="inline-btn" id="btn-delete-prompt">Delete Selected</button>
         </div>
         <div style="margin-top: 1rem;">
-          <label for="customPromptName">Nome do Novo/Atual Prompt:</label><br/>
+          <label for="customPromptName">Name of New/Current Prompt:</label><br/>
           <input id="customPromptName" type="text" style="width: 100%;" />
         </div>
         <div style="margin-top: 1rem;">
-          <label for="customPromptContent">Conteúdo do Prompt:</label><br/>
+          <label for="customPromptContent">Prompt Content:</label><br/>
           <textarea id="customPromptContent"></textarea>
         </div>
-        <button id="btn-save-prompt">Salvar Prompt</button>
+        <button id="btn-save-prompt">Save Prompt</button>
       </div>
 
       <script>
         const vscode = acquireVsCodeApi();
 
-        // Botão de gerar e copiar (lê vários prompts selecionados)
+        // Button to generate and copy (reads multiple selected prompts)
         document.getElementById("btn-generate-copy").addEventListener("click", () => {
           const promptText = document.getElementById("promptText").value.trim();
           const list = document.getElementById("promptList");
@@ -93,12 +91,12 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
           });
         });
 
-        // Solicitar a lista de prompts ao carregar a página
+        // Request the list of custom prompts when the page loads
         window.addEventListener("load", () => {
           vscode.postMessage({ command: "getCustomPrompts" });
         });
 
-        // Botão de carregar vários prompts no editor
+        // Button to load multiple prompts into the editor
         document.getElementById("btn-load-multiple-prompts").addEventListener("click", () => {
           const list = document.getElementById("promptList");
           const selected = Array.from(list.selectedOptions).map(o => o.value);
@@ -109,7 +107,7 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
           });
         });
 
-        // Botão de excluir prompt (remove apenas um, se vários estiverem selecionados, remove o primeiro)
+        // Button to delete prompt (deletes only one, even if multiple are selected)
         document.getElementById("btn-delete-prompt").addEventListener("click", () => {
           const list = document.getElementById("promptList");
           if (!list.value) return;
@@ -119,7 +117,7 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
           });
         });
 
-        // Botão de salvar prompt
+        // Button to save prompt
         document.getElementById("btn-save-prompt").addEventListener("click", () => {
           const name = document.getElementById("customPromptName").value.trim();
           const content = document.getElementById("customPromptContent").value;
@@ -131,14 +129,14 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
           });
         });
 
-        // Recebe mensagens do VSCode
+        // Receive messages from VSCode
         window.addEventListener("message", (event) => {
           const data = event.data;
 
           if (data?.command === "generatedContent") {
             const status = document.getElementById("status");
-            // Exibe a mensagem incluindo a contagem de tokens
-            status.textContent = \`Conteúdo gerado e copiado! - \${data.tokenCount} Tokens\`;
+            // Display message including token count
+            status.textContent = \`Content generated and copied! - \${data.tokenCount} Tokens\`;
             status.classList.add("visible");
             setTimeout(() => {
               status.classList.remove("visible");

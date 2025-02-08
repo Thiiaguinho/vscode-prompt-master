@@ -25,6 +25,16 @@
    - Click **Generate & Copy** to combine the content of the selected files, custom prompts, and your manual prompt, and copy the result to your clipboard.
 6. **Keyboard Shortcut:** Press `Alt+2` to open the Prompt Master panel directly without using the Command Palette.
 
+## Screenshots
+
+### Prompt Master View
+
+![Prompt Master View](images/prompt-master-view.png)
+
+### Create Prompt Window
+
+![Create Prompt Window](images/create-prompt-window.png)
+
 ## Developing Locally
 
 1. Run `npm install` to install dependencies.
