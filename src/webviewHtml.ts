@@ -43,6 +43,56 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
         .inline-btn {
           margin-left: 0.5rem;
         }
+        pre {
+          background-color: #f5f5f5;
+          padding: 0.5rem;
+          border-radius: 4px;
+          overflow: auto;
+        }
+        .section-title {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .info-icon {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background-color: #007acc;
+          color: white;
+          font-size: 14px;
+          font-weight: bold;
+          cursor: pointer;
+        }
+        .modal {
+          display: none;
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-color: rgba(0, 0, 0, 0.5);
+          z-index: 100;
+          justify-content: center;
+          align-items: center;
+        }
+        .modal-content {
+          background-color: white;
+          padding: 20px;
+          border-radius: 5px;
+          max-width: 600px;
+          max-height: 80vh;
+          overflow-y: auto;
+        }
+        .close-btn {
+          float: right;
+          font-size: 20px;
+          font-weight: bold;
+          cursor: pointer;
+        }
       </style>
     </head>
     <body>
@@ -75,8 +125,70 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
         <button id="btn-save-prompt">Save Prompt</button>
       </div>
 
+      <div class="section">
+        <div class="section-title">
+          <h2>File Operations from Structured Output</h2>
+          <div class="info-icon" id="info-btn">i</div>
+        </div>
+        <p>Paste structured output from LLM to create, delete, or replace files:</p>
+        <textarea id="structuredOutput" style="height: 200px;"></textarea>
+        <button id="btn-process-output">Process File Operations</button>
+        <p id="file-ops-status"></p>
+      </div>
+
+      <div id="tutorial-modal" class="modal">
+        <div class="modal-content">
+          <span class="close-btn" id="close-modal">&times;</span>
+          <h3>JSON Format for File Operations</h3>
+          <p>The structured output should be a JSON array with objects for each file operation. Each operation must include an "action" and "path" field, with optional "content" field depending on the action.</p>
+          <p>Supported actions:</p>
+          <ul>
+            <li><strong>create</strong>: Creates a new file with the specified content</li>
+            <li><strong>delete</strong>: Deletes an existing file</li>
+            <li><strong>replace</strong>: Replaces the content of an existing file, or creates it if it doesn't exist</li>
+          </ul>
+          <p>Example format:</p>
+          <pre>
+[
+  {
+    "action": "create",
+    "path": "path/to/file.ext",
+    "content": "File content goes here"
+  },
+  {
+    "action": "delete", 
+    "path": "path/to/delete.ext"
+  },
+  {
+    "action": "replace",
+    "path": "path/to/replace.ext",
+    "content": "New content for file"
+  }
+]</pre>
+        </div>
+      </div>
+
       <script>
         const vscode = acquireVsCodeApi();
+
+        // Tutorial modal functionality
+        const infoBtn = document.getElementById("info-btn");
+        const modal = document.getElementById("tutorial-modal");
+        const closeModal = document.getElementById("close-modal");
+
+        infoBtn.addEventListener("click", () => {
+          modal.style.display = "flex";
+        });
+
+        closeModal.addEventListener("click", () => {
+          modal.style.display = "none";
+        });
+
+        window.addEventListener("click", (event) => {
+          if (event.target === modal) {
+            modal.style.display = "none";
+          }
+        });
 
         // Button to generate and copy (reads multiple selected prompts)
         document.getElementById("btn-generate-copy").addEventListener("click", () => {
@@ -129,6 +241,16 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
           });
         });
 
+        // Button to process structured output
+        document.getElementById("btn-process-output").addEventListener("click", () => {
+          const structuredOutput = document.getElementById("structuredOutput").value.trim();
+          if (!structuredOutput) return;
+          vscode.postMessage({
+            command: "processStructuredOutput",
+            structuredOutput
+          });
+        });
+
         // Receive messages from VSCode
         window.addEventListener("message", (event) => {
           const data = event.data;
@@ -157,6 +279,16 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
           if (data?.command === "loadedMultiplePrompts") {
             document.getElementById("customPromptName").value = data.combinedName;
             document.getElementById("customPromptContent").value = data.combinedContent;
+          }
+
+          if (data?.command === "fileOperationsCompleted") {
+            const status = document.getElementById("file-ops-status");
+            status.textContent = data.message;
+            status.style.color = data.success ? "green" : "red";
+            status.classList.add("visible");
+            setTimeout(() => {
+              status.classList.remove("visible");
+            }, 5000);
           }
         });
       </script>

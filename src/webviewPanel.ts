@@ -50,7 +50,7 @@ export function openPromptPanel(
 
             // Exibe mensagem no VSCode com a contagem de tokens
             vscode.window.showInformationMessage(
-              `Conteúdo gerado e copiado - ${totalTokens} Tokens`
+              `Content generated and copied - ${totalTokens} Tokens`
             )
 
             // Envia mensagem ao WebView incluindo a contagem de tokens
@@ -94,7 +94,7 @@ export function openPromptPanel(
         case "saveCustomPrompt":
           {
             await saveCustomPrompt(context, message.name, message.content)
-            vscode.window.showInformationMessage(`Prompt "${message.name}" salvo com sucesso!`)
+            vscode.window.showInformationMessage(`Prompt "${message.name}" saved successfully!`)
             const prompts = await loadCustomPrompts(context)
             panel?.webview.postMessage({
               command: "listCustomPrompts",
@@ -106,12 +106,31 @@ export function openPromptPanel(
         case "deleteCustomPrompt":
           {
             await deleteCustomPrompt(context, message.name)
-            vscode.window.showInformationMessage(`Prompt "${message.name}" excluído com sucesso!`)
+            vscode.window.showInformationMessage(`Prompt "${message.name}" deleted successfully!`)
             const prompts = await loadCustomPrompts(context)
             panel?.webview.postMessage({
               command: "listCustomPrompts",
               prompts,
             })
+          }
+          break
+
+        case "processStructuredOutput":
+          {
+            try {
+              await processFileOperations(message.structuredOutput)
+              panel?.webview.postMessage({
+                command: "fileOperationsCompleted",
+                success: true,
+                message: "File operations completed successfully!",
+              })
+            } catch (error) {
+              panel?.webview.postMessage({
+                command: "fileOperationsCompleted",
+                success: false,
+                message: `Error: ${error instanceof Error ? error.message : String(error)}`,
+              })
+            }
           }
           break
       }
@@ -200,4 +219,74 @@ async function concatFilesContent(
   // Prompt manual final
   finalText += `PROMPT:\n${userPrompt}\n`
   return finalText
+}
+
+interface FileOperation {
+  action: "create" | "delete" | "replace"
+  path: string
+  content?: string
+}
+
+async function processFileOperations(structuredOutput: string): Promise<void> {
+  if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
+    throw new Error("No workspace open")
+  }
+
+  const rootPath = vscode.workspace.workspaceFolders[0].uri.fsPath
+  let operations: FileOperation[]
+
+  try {
+    operations = JSON.parse(structuredOutput)
+    if (!Array.isArray(operations)) {
+      throw new Error("The structured output must be an array of operations")
+    }
+  } catch (error) {
+    throw new Error(
+      `Failed to parse structured output: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+
+  for (const op of operations) {
+    const { action, path: filePath, content } = op
+
+    if (!filePath) {
+      throw new Error(`An operation is missing the 'path' field`)
+    }
+
+    if (!action) {
+      throw new Error(`An operation is missing the 'action' field`)
+    }
+
+    if ((action === "create" || action === "replace") && content === undefined) {
+      throw new Error(`Operation ${action} for '${filePath}' is missing the 'content' field`)
+    }
+
+    const fullPath = path.join(rootPath, filePath)
+    const directoryPath = path.dirname(fullPath)
+
+    switch (action) {
+      case "create":
+        await fs.promises.mkdir(directoryPath, { recursive: true })
+        await fs.promises.writeFile(fullPath, content || "")
+        break
+
+      case "delete":
+        if (fs.existsSync(fullPath)) {
+          await fs.promises.unlink(fullPath)
+        }
+        break
+
+      case "replace":
+        if (fs.existsSync(fullPath)) {
+          await fs.promises.writeFile(fullPath, content || "")
+        } else {
+          await fs.promises.mkdir(directoryPath, { recursive: true })
+          await fs.promises.writeFile(fullPath, content || "")
+        }
+        break
+
+      default:
+        throw new Error(`Unknown action: ${action}`)
+    }
+  }
 }
