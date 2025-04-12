@@ -2,7 +2,7 @@
   "name": "vscode-prompt-master",
   "displayName": "VSCode Prompt Master",
   "description": "Create and manage prompts with selected files to provide context for LLM's.",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "publisher": "Thiago",
   "engines": {
     "vscode": "^1.80.0"
@@ -56,6 +56,7 @@
     ]
   },
   "dependencies": {
+    "fast-xml-parser": "^5.2.0",
     "tiktoken": "^1.0.20"
   }
 }

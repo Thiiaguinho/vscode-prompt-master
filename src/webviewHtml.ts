@@ -48,6 +48,8 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
           padding: 0.5rem;
           border-radius: 4px;
           overflow: auto;
+          white-space: pre-wrap; /* Ensure pre content wraps */
+          word-wrap: break-word; /* Break long words */
         }
         .section-title {
           display: flex;
@@ -86,6 +88,7 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
           max-width: 600px;
           max-height: 80vh;
           overflow-y: auto;
+          color: #333; /* Ensure text is readable */
         }
         .close-btn {
           float: right;
@@ -130,7 +133,7 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
           <h2>File Operations from Structured Output</h2>
           <div class="info-icon" id="info-btn">i</div>
         </div>
-        <p>Paste structured output from LLM to create, delete, or replace files:</p>
+        <p>Paste structured XML output from LLM to create, delete, or replace files:</p>
         <textarea id="structuredOutput" style="height: 200px;"></textarea>
         <button id="btn-process-output">Process File Operations</button>
         <p id="file-ops-status"></p>
@@ -138,33 +141,37 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
 
       <div id="tutorial-modal" class="modal">
         <div class="modal-content">
-          <span class="close-btn" id="close-modal">&times;</span>
-          <h3>JSON Format for File Operations</h3>
-          <p>The structured output should be a JSON array with objects for each file operation. Each operation must include an "action" and "path" field, with optional "content" field depending on the action.</p>
-          <p>Supported actions:</p>
+          <span class="close-btn" id="close-modal">×</span>
+          <h3>XML Format for File Operations</h3>
+          <p>The structured output should be an XML document containing an <code><operations></code> root element. Inside, list each file operation using an <code><operation></code> tag.</p>
+          <p>Each <code><operation></code> must have:</p>
           <ul>
-            <li><strong>create</strong>: Creates a new file with the specified content</li>
-            <li><strong>delete</strong>: Deletes an existing file</li>
-            <li><strong>replace</strong>: Replaces the content of an existing file, or creates it if it doesn't exist</li>
+            <li>An <code>action</code> attribute: <code>"create"</code>, <code>"delete"</code>, or <code>"replace"</code>.</li>
+            <li>A <code>path</code> attribute: The relative path to the file within the workspace.</li>
           </ul>
+          <p>For <code>"create"</code> and <code>"replace"</code> actions, a <code><content></code> child element is required. It's highly recommended to wrap the file content within <code><![CDATA[...]]></code> to handle special characters and newlines easily.</p>
           <p>Example format:</p>
-          <pre>
-[
-  {
-    "action": "create",
-    "path": "path/to/file.ext",
-    "content": "File content goes here"
-  },
-  {
-    "action": "delete", 
-    "path": "path/to/delete.ext"
-  },
-  {
-    "action": "replace",
-    "path": "path/to/replace.ext",
-    "content": "New content for file"
-  }
-]</pre>
+          <pre><code class="language-xml"><operations>
+  <operation action="create" path="src/components/newComponent.js">
+    <content><![CDATA[
+import React from 'react';
+
+const NewComponent = () => {
+  return <div>New Component Content</div>;
+};
+
+export default NewComponent;
+    ]]></content>
+  </operation>
+  <operation action="delete" path="docs/old_notes.txt" />
+  <operation action="replace" path="README.md">
+    <content><![CDATA[
+# Updated Project Readme
+
+This is the new content.
+    ]]></content>
+  </operation>
+</operations></code></pre>
         </div>
       </div>
 
@@ -247,7 +254,7 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
           if (!structuredOutput) return;
           vscode.postMessage({
             command: "processStructuredOutput",
-            structuredOutput
+            structuredOutput // Send the XML string
           });
         });
 
@@ -257,7 +264,6 @@ export function getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.
 
           if (data?.command === "generatedContent") {
             const status = document.getElementById("status");
-            // Display message including token count
             status.textContent = \`Content generated and copied! - \${data.tokenCount} Tokens\`;
             status.classList.add("visible");
             setTimeout(() => {

@@ -5,6 +5,7 @@ import { PromptMasterTreeProvider } from "./treeViewProvider"
 import { getHtmlForWebview } from "./webviewHtml"
 import { loadCustomPrompts, saveCustomPrompt, deleteCustomPrompt } from "./prompts"
 import { get_encoding } from "tiktoken"
+import { XMLParser } from "fast-xml-parser" // Import XML Parser
 
 let panel: vscode.WebviewPanel | undefined = undefined
 
@@ -32,7 +33,6 @@ export function openPromptPanel(
         case "generateAndCopy":
           {
             const selectedPaths = treeDataProvider.getSelectedFiles()
-            // Concatena o conteúdo dos arquivos selecionados + prompts selecionados + prompt manual
             const combined = await concatFilesContent(
               context,
               selectedPaths,
@@ -40,20 +40,15 @@ export function openPromptPanel(
               message.promptText
             )
 
-            // Calcula a quantidade total de tokens contando arquivos, prompts personalizados e prompt manual
             const enc = get_encoding("o200k_base")
             const totalTokens = enc.encode(combined).length
             enc.free()
 
-            // Copia somente o texto combinado, sem a contagem de tokens ao final
             await vscode.env.clipboard.writeText(combined)
-
-            // Exibe mensagem no VSCode com a contagem de tokens
             vscode.window.showInformationMessage(
               `Content generated and copied - ${totalTokens} Tokens`
             )
 
-            // Envia mensagem ao WebView incluindo a contagem de tokens
             panel?.webview.postMessage({
               command: "generatedContent",
               text: combined,
@@ -118,7 +113,8 @@ export function openPromptPanel(
         case "processStructuredOutput":
           {
             try {
-              await processFileOperations(message.structuredOutput)
+              // Use the new XML processing function
+              await processFileOperationsXML(message.structuredOutput)
               panel?.webview.postMessage({
                 command: "fileOperationsCompleted",
                 success: true,
@@ -207,7 +203,6 @@ async function concatFilesContent(
     } catch {}
   }
 
-  // Conteúdo dos prompts selecionados
   const allPrompts = await loadCustomPrompts(context)
   for (const name of selectedPrompts) {
     const found = allPrompts.find((p) => p.name === name)
@@ -216,77 +211,138 @@ async function concatFilesContent(
     }
   }
 
-  // Prompt manual final
   finalText += `PROMPT:\n${userPrompt}\n`
   return finalText
 }
 
-interface FileOperation {
-  action: "create" | "delete" | "replace"
-  path: string
-  content?: string
+// Define expected structure after XML parsing
+interface XmlOperation {
+  "@_action": "create" | "delete" | "replace"
+  "@_path": string
+  content?: string | { "#text": string } | { __cdata: string } // Handle text, CDATA, or empty
 }
 
-async function processFileOperations(structuredOutput: string): Promise<void> {
+// New function to process file operations using XML
+async function processFileOperationsXML(structuredOutput: string): Promise<void> {
   if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
     throw new Error("No workspace open")
   }
 
   const rootPath = vscode.workspace.workspaceFolders[0].uri.fsPath
-  let operations: FileOperation[]
+  const parser = new XMLParser({
+    ignoreAttributes: false, // Keep attributes like action and path
+    attributeNamePrefix: "@_", // Default prefix for attributes
+    textNodeName: "#text", // Default name for text content
+    cdataPropName: "__cdata", // Property name for CDATA content
+    allowBooleanAttributes: true, // Although not used here, good practice
+    parseAttributeValue: true, // Try to parse attribute values (e.g., numbers, booleans)
+    trimValues: true, // Trim whitespace from values
+    ignoreDeclaration: true, // Ignore <?xml ...?> declaration
+  })
+
+  let operations: XmlOperation[] = []
 
   try {
-    operations = JSON.parse(structuredOutput)
-    if (!Array.isArray(operations)) {
-      throw new Error("The structured output must be an array of operations")
+    const parsedXml = parser.parse(structuredOutput)
+
+    // Check for root <operations> tag
+    if (!parsedXml.operations) {
+      throw new Error("Missing root <operations> tag in XML input")
+    }
+
+    // Access the operation(s). It might be a single object or an array.
+    let ops = parsedXml.operations.operation
+    if (!ops) {
+      // No operations found
+      operations = []
+    } else if (!Array.isArray(ops)) {
+      // Single operation found, wrap in an array
+      operations = [ops]
+    } else {
+      // Multiple operations found (already an array)
+      operations = ops
     }
   } catch (error) {
     throw new Error(
-      `Failed to parse structured output: ${error instanceof Error ? error.message : String(error)}`
+      `Failed to parse XML input: ${error instanceof Error ? error.message : String(error)}`
     )
   }
 
   for (const op of operations) {
-    const { action, path: filePath, content } = op
+    const action = op["@_action"]
+    const filePath = op["@_path"]
+    let content: string | undefined = undefined
+
+    // Extract content, handling CDATA, plain text, or absence
+    if (op.content) {
+      if (typeof op.content === "string") {
+        content = op.content
+      } else if (typeof op.content === "object") {
+        if ("__cdata" in op.content && op.content.__cdata !== undefined) {
+          content = op.content.__cdata
+        } else if ("#text" in op.content && op.content["#text"] !== undefined) {
+          content = op.content["#text"]
+        }
+      }
+    }
+    content = content ?? "" // Default to empty string if undefined/null
 
     if (!filePath) {
-      throw new Error(`An operation is missing the 'path' field`)
+      throw new Error(`An operation is missing the 'path' attribute`)
     }
 
-    if (!action) {
-      throw new Error(`An operation is missing the 'action' field`)
+    const validActions = ["create", "delete", "replace"]
+    if (!action || !validActions.includes(action)) {
+      throw new Error(
+        `Operation for '${filePath}' has missing or invalid 'action' attribute. Must be one of: ${validActions.join(
+          ", "
+        )}`
+      )
     }
 
-    if ((action === "create" || action === "replace") && content === undefined) {
-      throw new Error(`Operation ${action} for '${filePath}' is missing the 'content' field`)
-    }
+    // Content is required for create/replace, but we default to "" if missing
+    // No explicit check needed here as we default content to ""
 
     const fullPath = path.join(rootPath, filePath)
     const directoryPath = path.dirname(fullPath)
 
-    switch (action) {
-      case "create":
-        await fs.promises.mkdir(directoryPath, { recursive: true })
-        await fs.promises.writeFile(fullPath, content || "")
-        break
-
-      case "delete":
-        if (fs.existsSync(fullPath)) {
-          await fs.promises.unlink(fullPath)
-        }
-        break
-
-      case "replace":
-        if (fs.existsSync(fullPath)) {
-          await fs.promises.writeFile(fullPath, content || "")
-        } else {
+    try {
+      switch (action) {
+        case "create":
+          // Check if file already exists for 'create' action
+          if (fs.existsSync(fullPath)) {
+            console.warn(
+              `File already exists at ${filePath}. Overwriting for 'create' action. Consider using 'replace'.`
+            )
+            // Allow overwriting for 'create' for simplicity, or throw error:
+            // throw new Error(`Cannot create file at '${filePath}', it already exists. Use action="replace" to overwrite.`);
+          }
           await fs.promises.mkdir(directoryPath, { recursive: true })
-          await fs.promises.writeFile(fullPath, content || "")
-        }
-        break
+          await fs.promises.writeFile(fullPath, content)
+          break
 
-      default:
-        throw new Error(`Unknown action: ${action}`)
+        case "delete":
+          if (fs.existsSync(fullPath)) {
+            await fs.promises.unlink(fullPath)
+          } else {
+            // Optionally warn or ignore if file doesn't exist
+            console.warn(`File to delete at '${filePath}' not found. Skipping delete operation.`)
+          }
+          break
+
+        case "replace":
+          // Ensure directory exists before writing
+          await fs.promises.mkdir(directoryPath, { recursive: true })
+          // Write file, replacing if exists, creating if not
+          await fs.promises.writeFile(fullPath, content)
+          break
+      }
+    } catch (err) {
+      throw new Error(
+        `Failed to perform action '${action}' on path '${filePath}': ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      )
     }
   }
 }
