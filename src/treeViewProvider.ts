@@ -1,6 +1,7 @@
 import * as vscode from "vscode"
 import * as path from "path"
 import * as fs from "fs"
+import ignore from "ignore"
 
 export class PromptMasterTreeProvider implements vscode.TreeDataProvider<FileItem> {
   private _onDidChangeTreeData: vscode.EventEmitter<FileItem | undefined | void> =
@@ -20,21 +21,27 @@ export class PromptMasterTreeProvider implements vscode.TreeDataProvider<FileIte
 
   async toggleSelection(item: FileItem) {
     const alreadySelected = this.isSelected(item.fullPath)
+    
     if (item.isDirectory) {
-      // Se for diretório, seleciona/desseleciona tudo dentro dele recursivamente
-      const allChildren = await this.collectAllChildPaths(item.fullPath)
+      // Se for diretório, usa a lógica inteligente para selecionar apenas arquivos relevantes
+      // ou seleciona tudo se estivermos removendo a seleção (para garantir limpeza)
+      const allChildren = await this.collectAllChildPaths(item.fullPath, !alreadySelected)
+      
       if (alreadySelected) {
+        // Desmarcar: removemos filhos e o próprio item
         for (const childPath of allChildren) {
           this.selectedPaths.delete(childPath)
         }
         this.selectedPaths.delete(item.fullPath)
       } else {
+        // Marcar: adicionamos filhos filtrados e o próprio item
         for (const childPath of allChildren) {
           this.selectedPaths.add(childPath)
         }
         this.selectedPaths.add(item.fullPath)
       }
     } else {
+      // Se for arquivo individual, o usuário tem controle total (pode selecionar ignorados)
       if (alreadySelected) {
         this.selectedPaths.delete(item.fullPath)
       } else {
@@ -80,66 +87,121 @@ export class PromptMasterTreeProvider implements vscode.TreeDataProvider<FileIte
 
     try {
       const dirents = await fs.promises.readdir(currentPath, { withFileTypes: true })
-      const children = dirents
-        // Ignora arquivos/pastas que começam com "."
-        .filter((dirent) => !dirent.name.startsWith("."))
-        .map((dirent) => {
-          const fullPath = path.join(currentPath, dirent.name)
-          return new FileItem(dirent.name, fullPath, dirent.isDirectory())
-        })
+      const children = dirents.map((dirent) => {
+        const fullPath = path.join(currentPath, dirent.name)
+        return new FileItem(dirent.name, fullPath, dirent.isDirectory())
+      })
       return children
     } catch {
       return []
     }
   }
 
-  // Coleta recursivamente todos os paths (arquivos/pastas) de um diretório
-  private async collectAllChildPaths(dirPath: string): Promise<string[]> {
-    const result: string[] = []
-    const stack = [dirPath]
+  /**
+   * Coleta recursivamente paths filhos.
+   * Se applyFilters = true (ao selecionar), ignora node_modules, dotfiles e .gitignore.
+   * Se applyFilters = false (ao desselecionar), coleta tudo para garantir limpeza completa.
+   */
+  private async collectAllChildPaths(
+    startPath: string,
+    applyFilters: boolean = true
+  ): Promise<string[]> {
+    const results: string[] = []
 
-    while (stack.length > 0) {
-      const current = stack.pop()!
+    // Stack para ignoradores: mantém regras de .gitignore baseadas no diretório
+    interface IgnoreContext {
+      ignorer: ReturnType<typeof ignore>
+      root: string
+    }
+    
+    // Função recursiva interna
+    const traverse = async (currentPath: string, ignoreStack: IgnoreContext[]) => {
       try {
-        const dirents = await fs.promises.readdir(current, { withFileTypes: true })
+        const dirents = await fs.promises.readdir(currentPath, { withFileTypes: true })
+
+        // Verifica se há um .gitignore nesta pasta
+        const gitIgnorePath = path.join(currentPath, ".gitignore")
+        let currentStack = ignoreStack
+
+        if (applyFilters && fs.existsSync(gitIgnorePath)) {
+          const content = await fs.promises.readFile(gitIgnorePath, "utf-8")
+          const newIgnorer = ignore().add(content)
+          // Adiciona novo contexto de ignore à pilha
+          currentStack = [...ignoreStack, { ignorer: newIgnorer, root: currentPath }]
+        }
+
         for (const dirent of dirents) {
-          if (dirent.name.startsWith(".")) {
+          const name = dirent.name
+          const fullPath = path.join(currentPath, name)
+
+          // 1. Filtros Hardcoded (node_modules e arquivos começando com .)
+          if (applyFilters) {
+            if (name === "node_modules" || name.startsWith(".")) {
+              continue
+            }
+          }
+
+          // 2. Filtros de .gitignore (acumulados)
+          let isIgnored = false
+          if (applyFilters && currentStack.length > 0) {
+            // Verifica contra todos os .gitignores acumulados até aqui
+            for (const ctx of currentStack) {
+              // ignore package espera caminho relativo à raiz do arquivo .gitignore
+              const relativePath = path.relative(ctx.root, fullPath)
+              if (relativePath && ctx.ignorer.ignores(relativePath)) {
+                isIgnored = true
+                break
+              }
+            }
+          }
+
+          if (isIgnored) {
             continue
           }
-          const full = path.join(current, dirent.name)
+
           if (dirent.isDirectory()) {
-            stack.push(full)
-            result.push(full)
+            results.push(fullPath)
+            await traverse(fullPath, currentStack)
           } else {
-            result.push(full)
+            results.push(fullPath)
           }
         }
-      } catch {
-        // Se não for possível ler, ignore
+      } catch (e) {
+        // Ignora erros de permissão ou leitura
       }
     }
 
-    return result
+    // Inicializa a travessia. 
+    // Tentamos pegar o .gitignore da raiz do workspace se estivermos começando de lá ou acima
+    const workspaceRoot = vscode.workspace.workspaceFolders 
+        ? vscode.workspace.workspaceFolders[0].uri.fsPath 
+        : startPath
+    
+    const initialStack: IgnoreContext[] = []
+    
+    // Se o startPath for subpasta, precisamos tentar carregar o .gitignore da raiz do workspace primeiro
+    // para garantir que regras globais sejam respeitadas
+    if (applyFilters && startPath.startsWith(workspaceRoot)) {
+        const rootGitIgnore = path.join(workspaceRoot, ".gitignore")
+        if (fs.existsSync(rootGitIgnore)) {
+            const content = await fs.promises.readFile(rootGitIgnore, "utf-8")
+            initialStack.push({ ignorer: ignore().add(content), root: workspaceRoot })
+        }
+    }
+
+    await traverse(startPath, initialStack)
+    return results
   }
 
   // === INÍCIO DAS NOVAS FUNÇÕES PARA ATUALIZAÇÃO AUTOMÁTICA DA VIEW ===
 
-  /**
-   * Chamado quando um arquivo ou pasta é criado.
-   * Se a pasta pai estiver selecionada, este novo path também passa a ser selecionado.
-   */
   public handleFileCreated(filePath: string) {
-    // Se algum ancestral estiver selecionado, marcamos o novo path também
     if (this.hasAnySelectedParent(filePath)) {
       this.selectedPaths.add(filePath)
     }
     this.refresh()
   }
 
-  /**
-   * Chamado quando um arquivo ou pasta é excluído.
-   * Se o path estiver selecionado, removemos da seleção.
-   */
   public handleFileDeleted(filePath: string) {
     if (this.selectedPaths.has(filePath)) {
       this.selectedPaths.delete(filePath)
@@ -147,10 +209,6 @@ export class PromptMasterTreeProvider implements vscode.TreeDataProvider<FileIte
     this.refresh()
   }
 
-  /**
-   * Verifica se algum diretório pai (ancestral) está selecionado.
-   * Se sim, então novos arquivos criados nesse diretório também devem ser selecionados.
-   */
   private hasAnySelectedParent(filePath: string): boolean {
     let current = path.dirname(filePath)
     while (true) {
@@ -165,8 +223,6 @@ export class PromptMasterTreeProvider implements vscode.TreeDataProvider<FileIte
     }
     return false
   }
-
-  // === FIM DAS NOVAS FUNÇÕES PARA ATUALIZAÇÃO AUTOMÁTICA DA VIEW ===
 }
 
 export class FileItem {
